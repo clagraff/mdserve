@@ -326,7 +326,7 @@ func (handler markdownHandler) handle(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	wrapper := newStatusCodeCapturer(w)
 	defer func() {
-		dur := time.Now().Sub(start)
+		dur := time.Since(start)
 		status := wrapper.statusCode
 
 		log.Printf("method=%s host=%s path=%s status=%d dur=%s\n", r.Method, r.Host, r.URL.Path, status, dur)
@@ -371,7 +371,7 @@ func (handler markdownHandler) handleMarkdown(w http.ResponseWriter, r *http.Req
 			return
 		}
 
-		// Reply with HTTP 404 is it is required by the server
+		// Reply with HTTP 404 if file extension is required, since the path isn't a directory.
 		if handler.requireExt {
 			w.WriteHeader(404)
 			return
@@ -380,7 +380,6 @@ func (handler markdownHandler) handleMarkdown(w http.ResponseWriter, r *http.Req
 		// otherwise append it so we can properly find the files.
 		// WARN: note, this means we will not support files which do not include a file extension.
 		cleanPath = cleanPath + ".md"
-		extension = ".md"
 	}
 
 	fileContent, err := ioutil.ReadFile(filepath.Join(handler.dir, cleanPath))
@@ -421,9 +420,9 @@ func (handler markdownHandler) handleDirectory(w http.ResponseWriter, r *http.Re
 	mdParser, renderer := handler.markdownArgs()
 	dirInfo, _ := os.Stat(filepath.Join(handler.dir, cleanPath)) // error should have been checked by caller.
 
-	// The requested path exists, but it is not a directory. We dont serve files that do not have extensions.
-	// Return an HTTP 404.
-	if dirInfo.IsDir() != true {
+	// The requested path exists, but it is not a directory. Throw a HTTP 404 for now.
+	// TODO: update code to handle name collisions between files and directories.
+	if !dirInfo.IsDir(){
 		w.WriteHeader(404)
 		return
 	}
@@ -454,13 +453,13 @@ func (handler markdownHandler) handleDirectory(w http.ResponseWriter, r *http.Re
 
 	buff := new(bytes.Buffer)
 	for _, f := range contents {
-		// Only include directories or files with markdown extension.
+		// Only include directories, or files with markdown extension.
+		// TODO: what about mardkwon files without a file extension?
 		if f.IsDir() || filepath.Ext(f.Name()) == ".md" {
 			buff.WriteString(fmt.Sprintf("* %s\n", f.Name()))
 		}
 	}
 
-	dir, _ = os.Open(filepath.Join(handler.dir, cleanPath))
 	renderedHTML := markdown.ToHTML(buff.Bytes(), mdParser, renderer)
 	if cleanPath == "/" {
 		cleanPath = ""
@@ -490,7 +489,6 @@ func (handler markdownHandler) handleDirectory(w http.ResponseWriter, r *http.Re
 		w.WriteHeader(500)
 		return
 	}
-	return
 }
 
 func (handler markdownHandler) markdownArgs() (*parser.Parser, *html.Renderer) {
@@ -577,7 +575,7 @@ func main() {
 	}
 
 	hideFileListing := "no"
-	if progArgs.hideListing == true {
+	if progArgs.hideListing {
 		hideFileListing = "yes"
 	}
 
